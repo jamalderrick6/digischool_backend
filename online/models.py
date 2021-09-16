@@ -7,6 +7,11 @@ from django.db.models.indexes import Index
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+User._meta.get_field('email')._unique = True
+User.USERNAME_FIELD = 'email'
+User._meta.get_field('username')._unique = False
+User.REQUIRED_FIELDS = ['password']
+
 
 @receiver(post_save, sender=User)
 def save_user_profile(sender, instance, **kwargs):

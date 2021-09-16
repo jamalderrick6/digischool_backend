@@ -7,12 +7,14 @@ from rest_framework.parsers import JSONParser
 from rest_framework import status
 
 from django.contrib.auth.models import User
+from django.contrib.auth.hashers import check_password
 from .models import Course, Price, Profile
 
 from django.forms.models import model_to_dict
 
-from .serializers import CoursesListSerializer, PriceListSerializer
+from .serializers import CoursesListSerializer, PriceListSerializer, LoginSerializer
 from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework import generics, status, views
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
@@ -34,12 +36,13 @@ class ProfileCreate(views.APIView):
     def post(self, request):
         email = self.request.data.get('email')
         password = self.request.data.get('password')
-        fullname = self.request.data.get('fullname')
+        first_name = self.request.data.get('first_name')
+        last_name = self.request.data.get('last_name')
         phone = self.request.data.get('phone')
         address = self.request.data.get('address')
         prior_experience = self.request.data.get('prior_experience')
 
-        params = ['email', 'password', 'fullname',
+        params = ['email', 'password', 'first_name', 'last_name',
                   'phone', 'address', 'prior_experience']
         keys = self.request.data.keys()
         for param in params:
@@ -53,7 +56,8 @@ class ProfileCreate(views.APIView):
             user = User.objects.create_user(username="default", email=email)
             user.set_password(password)
             user.is_active = True
-            user.fullname = fullname
+            user.first_name = first_name
+            user.last_name = last_name
             user.phone = phone
             user.address = address
 
@@ -67,6 +71,87 @@ class ProfileCreate(views.APIView):
             return JsonResponse(model_to_dict(user))
         else:
             return make_error_dict(400, 'FormValidator', 'email already exists')
+
+
+class LoginView(generics.CreateAPIView):
+    serializer_class = LoginSerializer
+
+    def post(self, request, ):
+        email = request.data.get("email")
+        password = request.data.get("password")
+        user = User.objects.filter(email=email).first()
+        profile = Profile.objects.filter(user_id=user.id).first()
+        profile.login_count += 1
+        profile.save()
+        if user:
+            pwd_valid = check_password(password, user.password)
+            if pwd_valid:
+                return Response({"token": user.auth_token.key})
+        return Response({"error": "Wrong Credentials"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GetUpdateProfileView(views.APIView):
+    permission_classes = (IsAuthenticated,)
+
+    def get(self, request):
+
+        user = self.request.user
+        profile: Profile = Profile.objects.filter(user_id=user.id).first()
+
+        return JsonResponse({
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'email': user.email,
+            'login_count': profile.login_count,
+            # 'profile_image': profile.image,
+            'is_staff': user.is_staff
+        })
+
+    # def post(self, request):
+    #     user = self.request.user
+
+    #     first_name = self.request.data.get("first_name")
+    #     last_name = self.request.data.get("last_name")
+    #     email = self.request.data.get("email")
+    #     image = self.request.data.get("image")
+
+    #     prev_email = user.email
+
+    #     data = {}
+
+    #     if first_name:
+    #         user.first_name = first_name
+    #         data['first_name'] = first_name
+
+    #     if last_name:
+    #         user.last_name = last_name
+    #         data['last_name'] = last_name
+
+    #     if email and email != prev_email:
+    #         user.email = email
+    #         data['email'] = email
+
+    #         send_confirmation_email(request, user)
+
+    #         profile = Profile.objects.using("matrix") \
+    #                     .filter(user_id=user.id).first()
+    #         profile.email_verified = False
+
+    #         profile.save()
+
+    #     if image:
+    #         profile: Profile = Profile.objects.using("matrix").filter(user_id=user.id).first()
+    #         if image == "delete":
+    #             data['image'] = None
+    #             profile.image = None
+    #         else:
+    #             data['image'] = image
+    #             profile.image = image
+    #         profile.save()
+
+    #     user.save()
+
+    #     return JsonResponse(data, status=202)
 
 
 @api_view(['GET', 'POST', 'DELETE'])
